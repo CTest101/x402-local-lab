@@ -10,6 +10,10 @@
   },
   "dependencies": {
     "@x402-local/config": "workspace:*",
+    "@x402/express": "^2.6.0",
+    "@x402/core": "^2.6.0",
+    "@x402/evm": "^2.6.0",
+    "dotenv": "^16.6.1",
     "express": "^5.1.0"
   },
   "devDependencies": {

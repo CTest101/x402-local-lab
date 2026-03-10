@@ -10,8 +10,11 @@
   },
   "dependencies": {
     "@x402-local/config": "workspace:*",
-    "@x402-local/payment-core": "workspace:*",
-    "@x402-local/signer": "workspace:*"
+    "@x402-local/signer": "workspace:*",
+    "@x402/fetch": "^2.6.0",
+    "@x402/evm": "^2.6.0",
+    "dotenv": "^16.6.1",
+    "viem": "^2.37.5"
   },
   "devDependencies": {
     "tsx": "^4.20.5"

@@ -7,6 +7,14 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "declaration": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@x402-local/types": ["packages/types/src/index.ts"],
+      "@x402-local/config": ["packages/config/src/index.ts"],
+      "@x402-local/signer": ["packages/signer/src/index.ts"],
+      "@x402-local/payment-core": ["packages/payment-core/src/index.ts"]
+    }
   }
 }
