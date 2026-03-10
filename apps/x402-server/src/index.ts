@@ -1,11 +1,12 @@
 import { config as loadDotenv } from "dotenv";
+import path from "node:path";
 import express from "express";
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { loadSharedConfig } from "@x402-local/config";
 
-loadDotenv();
+loadDotenv({ path: path.resolve(process.cwd(), "../../.env") });
 const cfg = loadSharedConfig();
 
 const app = express();
