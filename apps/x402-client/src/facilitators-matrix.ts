@@ -3,10 +3,24 @@ import path from "node:path";
 
 const defaultFacilitators = [
   "https://x402.org/facilitator",
+  "https://facilitator.payai.network",
+  "https://facilitator.corbits.dev",
 ];
 
 function uniq<T>(arr: T[]) {
   return [...new Set(arr)];
+}
+
+function isTestnet(network: string) {
+  const n = network.toLowerCase();
+  return (
+    n.includes("sepolia") ||
+    n.includes("devnet") ||
+    n.includes("testnet") ||
+    n.includes("amoy") ||
+    n.includes("fuji") ||
+    n.endsWith(":2")
+  );
 }
 
 async function fetchSupported(url: string) {
@@ -42,33 +56,40 @@ async function fetchSupported(url: string) {
   }
 }
 
-function markdownMatrix(results: any[]) {
+function markdownMatrixZh(results: any[]) {
   const lines: string[] = [];
-  lines.push("# x402 Facilitator Network Matrix");
+  lines.push("# x402 Facilitator 支持矩阵（中文）");
   lines.push("");
-  lines.push(`GeneratedAt: ${new Date().toISOString()}`);
+  lines.push(`生成时间：${new Date().toISOString()}`);
   lines.push("");
 
   for (const r of results) {
     lines.push(`## ${r.facilitator}`);
     if (!r.ok) {
-      lines.push(`- Status: FAIL (${r.status})`);
-      lines.push(`- Error: ${r.error}`);
+      lines.push(`- 状态：失败 (${r.status})`);
+      lines.push(`- 错误：${r.error}`);
       lines.push("");
       continue;
     }
 
-    lines.push(`- Status: OK`);
-    lines.push(`- Extensions: ${r.extensions.join(", ") || "(none)"}`);
-    lines.push("");
-    lines.push("Supported kinds:");
+    const kinds = r.kinds || [];
+    const testCount = kinds.filter((k: any) => isTestnet(k.network)).length;
+    const mainCount = kinds.length - testCount;
 
-    if (!r.kinds.length) {
-      lines.push("- (none)");
+    lines.push(`- 状态：成功`);
+    lines.push(`- 支持 kinds：${kinds.length}`);
+    lines.push(`- 主网项：${mainCount} | 测试网项：${testCount}`);
+    lines.push(`- Extensions：${r.extensions.join(", ") || "(无)"}`);
+    lines.push("");
+    lines.push("支持明细：");
+
+    if (!kinds.length) {
+      lines.push("- (无)");
     } else {
-      for (const k of r.kinds) {
+      for (const k of kinds) {
+        const flag = isTestnet(k.network) ? "测试网" : "主网";
         lines.push(
-          `- v${k.x402Version} | scheme=${k.scheme} | network=${k.network}` +
+          `- [${flag}] v${k.x402Version} | scheme=${k.scheme} | network=${k.network}` +
             (k.extra ? ` | extra=${JSON.stringify(k.extra)}` : ""),
         );
       }
@@ -76,9 +97,9 @@ function markdownMatrix(results: any[]) {
 
     const signerFamilies = Object.keys(r.signers || {});
     lines.push("");
-    lines.push("Signers:");
+    lines.push("签名者（按链族）：");
     if (!signerFamilies.length) {
-      lines.push("- (none)");
+      lines.push("- (无)");
     } else {
       for (const fam of signerFamilies) {
         lines.push(`- ${fam}: ${(r.signers[fam] || []).join(", ")}`);
@@ -87,18 +108,20 @@ function markdownMatrix(results: any[]) {
     lines.push("");
   }
 
-  const allNetworks = uniq(
-    results
-      .filter(r => r.ok)
-      .flatMap(r => (r.kinds || []).map((k: any) => `v${k.x402Version}:${k.network}`)),
-  ).sort();
+  const allKinds = results
+    .filter(r => r.ok)
+    .flatMap(r => r.kinds || []);
+  const allNetworks = uniq(allKinds.map((k: any) => `v${k.x402Version}:${k.network}`)).sort();
 
-  lines.push("## Aggregated Networks");
-  if (!allNetworks.length) {
-    lines.push("- (none)");
-  } else {
-    for (const n of allNetworks) lines.push(`- ${n}`);
-  }
+  lines.push("## 汇总");
+  lines.push(`- Facilitator 数量：${results.length}`);
+  lines.push(`- 可用 Facilitator：${results.filter(r => r.ok).length}`);
+  lines.push(`- 网络条目总数（去重后）：${allNetworks.length}`);
+  lines.push(`- 测试网条目：${allKinds.filter((k: any) => isTestnet(k.network)).length}`);
+  lines.push(`- 主网条目：${allKinds.filter((k: any) => !isTestnet(k.network)).length}`);
+  lines.push("");
+  lines.push("全部网络（去重）：");
+  for (const n of allNetworks) lines.push(`- ${n}`);
 
   lines.push("");
   return lines.join("\n");
@@ -117,10 +140,10 @@ async function main() {
 
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const jsonPath = path.join(outDir, `facilitators-matrix-${ts}.json`);
-  const mdPath = path.join(outDir, `facilitators-matrix-${ts}.md`);
+  const mdPath = path.join(outDir, `facilitators-matrix-zh-${ts}.md`);
 
   fs.writeFileSync(jsonPath, JSON.stringify(results, null, 2));
-  fs.writeFileSync(mdPath, markdownMatrix(results));
+  fs.writeFileSync(mdPath, markdownMatrixZh(results));
 
   console.log(JSON.stringify({ facilitators, jsonPath, mdPath }, null, 2));
 }
