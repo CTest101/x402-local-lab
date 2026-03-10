@@ -13,14 +13,37 @@ function uniq<T>(arr: T[]) {
 
 function isTestnet(network: string) {
   const n = network.toLowerCase();
+  const knownTestIds = new Set([
+    "eip155:84532", // base sepolia
+    "eip155:43113", // avalanche fuji
+    "eip155:80002", // polygon amoy
+    "eip155:713715", // sei testnet
+    "eip155:324705682", // skale base sepolia
+    "eip155:1952", // xlayer testnet
+    "solana:etwtrabzayq6imfeykouru166vu2xqa1", // solana devnet
+    "stellar:testnet",
+    "aptos:2",
+  ]);
   return (
+    knownTestIds.has(n) ||
     n.includes("sepolia") ||
     n.includes("devnet") ||
     n.includes("testnet") ||
     n.includes("amoy") ||
-    n.includes("fuji") ||
-    n.endsWith(":2")
+    n.includes("fuji")
   );
+}
+
+function shortName(url: string) {
+  try {
+    const h = new URL(url).hostname;
+    if (h === "x402.org") return "x402.org";
+    if (h === "facilitator.payai.network") return "PayAI";
+    if (h === "facilitator.corbits.dev") return "Corbits";
+    return h;
+  } catch {
+    return url;
+  }
 }
 
 async function fetchSupported(url: string) {
@@ -56,72 +79,63 @@ async function fetchSupported(url: string) {
   }
 }
 
+function buildUnifiedRows(results: any[]) {
+  const rows = new Map<string, any>();
+
+  for (const r of results) {
+    const col = shortName(r.facilitator);
+    if (!r.ok) continue;
+    for (const k of r.kinds || []) {
+      const key = `v${k.x402Version}:${k.network}`;
+      if (!rows.has(key)) {
+        rows.set(key, {
+          key,
+          version: `v${k.x402Version}`,
+          network: k.network,
+          env: isTestnet(k.network) ? "测试网" : "主网",
+          support: {},
+        });
+      }
+      rows.get(key).support[col] = k.scheme ?? "exact";
+    }
+  }
+
+  return [...rows.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
 function markdownMatrixZh(results: any[]) {
   const lines: string[] = [];
-  lines.push("# x402 Facilitator 支持矩阵（中文）");
+  lines.push("# x402 Facilitator 统一网络矩阵（中文）");
   lines.push("");
   lines.push(`生成时间：${new Date().toISOString()}`);
   lines.push("");
 
-  for (const r of results) {
-    lines.push(`## ${r.facilitator}`);
-    if (!r.ok) {
-      lines.push(`- 状态：失败 (${r.status})`);
-      lines.push(`- 错误：${r.error}`);
-      lines.push("");
-      continue;
-    }
+  const cols = results.map(r => shortName(r.facilitator));
+  const rows = buildUnifiedRows(results);
 
-    const kinds = r.kinds || [];
-    const testCount = kinds.filter((k: any) => isTestnet(k.network)).length;
-    const mainCount = kinds.length - testCount;
+  lines.push("## 统一支持表（每列一个 Facilitator，每行一个网络）");
+  lines.push("");
+  lines.push(`| 网络(v:network) | 环境 | ${cols.join(" | ")} |`);
+  lines.push(`|---|---|${cols.map(() => "---").join("|")}|`);
 
-    lines.push(`- 状态：成功`);
-    lines.push(`- 支持 kinds：${kinds.length}`);
-    lines.push(`- 主网项：${mainCount} | 测试网项：${testCount}`);
-    lines.push(`- Extensions：${r.extensions.join(", ") || "(无)"}`);
-    lines.push("");
-    lines.push("支持明细：");
-
-    if (!kinds.length) {
-      lines.push("- (无)");
-    } else {
-      for (const k of kinds) {
-        const flag = isTestnet(k.network) ? "测试网" : "主网";
-        lines.push(
-          `- [${flag}] v${k.x402Version} | scheme=${k.scheme} | network=${k.network}` +
-            (k.extra ? ` | extra=${JSON.stringify(k.extra)}` : ""),
-        );
-      }
-    }
-
-    const signerFamilies = Object.keys(r.signers || {});
-    lines.push("");
-    lines.push("签名者（按链族）：");
-    if (!signerFamilies.length) {
-      lines.push("- (无)");
-    } else {
-      for (const fam of signerFamilies) {
-        lines.push(`- ${fam}: ${(r.signers[fam] || []).join(", ")}`);
-      }
-    }
-    lines.push("");
+  for (const row of rows) {
+    const cells = cols.map(c => (row.support[c] ? `✅ ${row.support[c]}` : "—"));
+    lines.push(`| ${row.key} | ${row.env} | ${cells.join(" | ")} |`);
   }
 
-  const allKinds = results
-    .filter(r => r.ok)
-    .flatMap(r => r.kinds || []);
-  const allNetworks = uniq(allKinds.map((k: any) => `v${k.x402Version}:${k.network}`)).sort();
-
-  lines.push("## 汇总");
-  lines.push(`- Facilitator 数量：${results.length}`);
-  lines.push(`- 可用 Facilitator：${results.filter(r => r.ok).length}`);
-  lines.push(`- 网络条目总数（去重后）：${allNetworks.length}`);
-  lines.push(`- 测试网条目：${allKinds.filter((k: any) => isTestnet(k.network)).length}`);
-  lines.push(`- 主网条目：${allKinds.filter((k: any) => !isTestnet(k.network)).length}`);
   lines.push("");
-  lines.push("全部网络（去重）：");
-  for (const n of allNetworks) lines.push(`- ${n}`);
+  lines.push("## Facilitator 状态");
+  for (const r of results) {
+    const name = shortName(r.facilitator);
+    if (!r.ok) {
+      lines.push(`- ${name}: ❌ 失败 (${r.status}) - ${r.error}`);
+    } else {
+      const kinds = r.kinds || [];
+      const testCount = kinds.filter((k: any) => isTestnet(k.network)).length;
+      const mainCount = kinds.length - testCount;
+      lines.push(`- ${name}: ✅ 成功 | kinds=${kinds.length} | 主网=${mainCount} | 测试网=${testCount}`);
+    }
+  }
 
   lines.push("");
   return lines.join("\n");
