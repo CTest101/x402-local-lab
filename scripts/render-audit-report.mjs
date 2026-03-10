@@ -5,14 +5,17 @@ import path from 'node:path';
 function pretty(v){return JSON.stringify(v ?? null,null,2)}
 
 const inPath = process.argv[2];
+const lang = process.argv[3] || 'en';
 if(!inPath){
-  console.error('Usage: node scripts/render-audit-report.mjs <run-json-path>');
+  console.error('Usage: node scripts/render-audit-report.mjs <run-json-path> [en|zh]');
   process.exit(1);
 }
 
 const absIn = path.resolve(inPath);
 const data = JSON.parse(fs.readFileSync(absIn,'utf8'));
-const templatePath = path.resolve('docs/templates/audit-report-template.md');
+const templatePath = path.resolve(
+  lang === 'zh' ? 'docs/templates/audit-report-template.zh.md' : 'docs/templates/audit-report-template.md'
+);
 let tpl = fs.readFileSync(templatePath,'utf8');
 
 const map = {
@@ -63,6 +66,6 @@ const map = {
 
 for(const [k,v] of Object.entries(map)) tpl = tpl.split(k).join(v);
 
-const outPath = absIn.replace(/\.json$/i,'.audit.md');
+const outPath = absIn.replace(/\.json$/i, lang === 'zh' ? '.audit.zh.md' : '.audit.md');
 fs.writeFileSync(outPath, tpl);
 console.log(outPath);
