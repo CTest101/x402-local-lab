@@ -23,6 +23,8 @@ services:
     command: ["pnpm", "--filter", "@x402-local/client", "exec", "tsx", "src/run-and-report.ts"]
     env_file:
       - .env
+    environment:
+      RESOURCE_SERVER_URL: http://x402-server:4020/premium/data
     depends_on:
       - x402-server
     profiles:
