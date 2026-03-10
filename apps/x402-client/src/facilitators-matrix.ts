@@ -138,9 +138,8 @@ async function main() {
   const outDir = path.resolve(process.cwd(), "../../docs/reports");
   fs.mkdirSync(outDir, { recursive: true });
 
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const jsonPath = path.join(outDir, `facilitators-matrix-${ts}.json`);
-  const mdPath = path.join(outDir, `facilitators-matrix-zh-${ts}.md`);
+  const jsonPath = path.join(outDir, "facilitators-matrix.json");
+  const mdPath = path.join(outDir, "facilitators-matrix.zh.md");
 
   fs.writeFileSync(jsonPath, JSON.stringify(results, null, 2));
   fs.writeFileSync(mdPath, markdownMatrixZh(results));
