@@ -12,6 +12,36 @@ const absIn = path.resolve(inPath);
 const data = JSON.parse(fs.readFileSync(absIn,'utf8'));
 let tpl = fs.readFileSync(path.resolve('docs/templates/audit-report-template.zh.detailed.md'),'utf8');
 
+const accepted = data.signing?.paymentPayload?.accepted || data.http?.firstResponse?.paymentRequiredDecoded?.accepts?.[0] || {};
+const auth = data.signing?.signatureObject?.payload?.authorization || {};
+const eip712TypedData = {
+  domain: {
+    name: accepted?.extra?.name ?? '',
+    version: accepted?.extra?.version ?? '',
+    chainId: Number(String(accepted?.network || '').split(':')[1] || 0),
+    verifyingContract: accepted?.asset ?? '',
+  },
+  types: {
+    TransferWithAuthorization: [
+      { name: 'from', type: 'address' },
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'validAfter', type: 'uint256' },
+      { name: 'validBefore', type: 'uint256' },
+      { name: 'nonce', type: 'bytes32' },
+    ],
+  },
+  primaryType: 'TransferWithAuthorization',
+  message: {
+    from: auth?.from ?? '',
+    to: auth?.to ?? '',
+    value: auth?.value ?? '',
+    validAfter: auth?.validAfter ?? '',
+    validBefore: auth?.validBefore ?? '',
+    nonce: auth?.nonce ?? '',
+  },
+};
+
 const map = {
   '{{meta.timestamp}}': data.meta?.timestamp ?? '',
   '{{meta.resourceUrl}}': data.meta?.resourceUrl ?? '',
@@ -35,6 +65,7 @@ const map = {
   '{{signing.signatureObject.json}}': pretty(data.signing?.signatureObject),
   '{{signing.paymentPayload.json}}': pretty(data.signing?.paymentPayload),
   '{{signing.signatureHex}}': data.signing?.signatureObject?.payload?.signature ?? '',
+  '{{signing.eip712TypedData.json}}': pretty(eip712TypedData),
 
   '{{http.secondResponse.headers.paymentResponse}}': data.http?.secondResponse?.headers?.paymentResponse ?? '',
   '{{http.secondResponse.paymentResponseDecoded.json}}': pretty(data.http?.secondResponse?.paymentResponseDecoded),

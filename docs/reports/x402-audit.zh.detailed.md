@@ -227,6 +227,40 @@ PAYMENT-REQUIRED 解码：
 签名结果（Hex）：
 `0x5a9d4ad9b6e28031cf6ecd52c8ac57caf372e9e8f66a90f0f22947eda2e09002366b42aa2a735a0704562acf9a7d063c48f69f737e6a2b1e5e2764e4b578865f1c`
 
+### 2.3 完整原始签名消息（EIP-712 Typed Data）
+
+> 说明：`payload.signature` 对下面这份 typed data 进行签名（primaryType: `TransferWithAuthorization`）。
+
+```json
+{
+  "domain": {
+    "name": "USDC",
+    "version": "2",
+    "chainId": 84532,
+    "verifyingContract": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+  },
+  "types": {
+    "TransferWithAuthorization": [
+      { "name": "from", "type": "address" },
+      { "name": "to", "type": "address" },
+      { "name": "value", "type": "uint256" },
+      { "name": "validAfter", "type": "uint256" },
+      { "name": "validBefore", "type": "uint256" },
+      { "name": "nonce", "type": "bytes32" }
+    ]
+  },
+  "primaryType": "TransferWithAuthorization",
+  "message": {
+    "from": "0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24",
+    "to": "0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24",
+    "value": "1000",
+    "validAfter": "1773154767",
+    "validBefore": "1773155667",
+    "nonce": "0x46aca7afc03be980c2281a740b9f1cffa81aa74ff6b6e51b234080302258c4e7"
+  }
+}
+```
+
 ---
 
 ## 3) Settlement 阶段（服务端验签与结算）

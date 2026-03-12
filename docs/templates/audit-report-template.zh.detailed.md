@@ -145,6 +145,14 @@ PAYMENT-REQUIRED 解码：
 签名结果（Hex）：
 `{{signing.signatureHex}}`
 
+### 2.3 完整原始签名消息（EIP-712 Typed Data）
+
+> 说明：`payload.signature` 对下面这份 typed data 进行签名（primaryType: `TransferWithAuthorization`）。
+
+```json
+{{signing.eip712TypedData.json}}
+```
+
 ---
 
 ## 3) Settlement 阶段（服务端验签与结算）
