@@ -90,30 +90,7 @@ sequenceDiagram
 - 响应状态：`402`（预期应为 402）
 - 耗时：15 ms
 
-### 1.2 PAYMENT-REQUIRED 关键字段解释（按层级）
-
-- 根对象
-  - `x402Version`: `2`
-  - `error`: `Payment required`
-  - `resource`: 资源元信息对象
-  - `accepts`: 可接受支付条件数组
-
-- `resource` 对象
-  - `resource.url`: `http://localhost:4020/premium/svm-data`
-  - `resource.description`: `Premium x402-protected JSON (SVM)`
-  - `resource.mimeType`: `application/json`
-
-- `accepts[0]` 对象（本次选中条款）
-  - `accepts[0].scheme`: `exact` — 精确金额支付模式
-  - `accepts[0].network`: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` — Solana Devnet（CAIP-2 格式，`EtWTRABZaYq6iMfeYKouRu166VU2xqa1` 是 Devnet 的 genesis hash 前缀）
-  - `accepts[0].asset`: `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` — USDC SPL Token Mint（Devnet）
-  - `accepts[0].amount`: `1` — 最小单位（1 = 0.000001 USDC，因 USDC decimals=6）
-  - `accepts[0].payTo`: `E55qLKqvQYabUwW6dhkC1QXTMfaYf2sX7p7UvETYXDZ1` — 收款方 Solana 地址
-  - `accepts[0].maxTimeoutSeconds`: `300` — 签名最大有效期（5 分钟）
-  - `accepts[0].extra`: 附加信息对象
-
-- `accepts[0].extra` 对象
-  - `accepts[0].extra.feePayer`: `CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5` — Facilitator 提供的 gas 代付账户（Solana 上交易费由此账户支付，买方无需持有 SOL）
+### 1.2 PAYMENT-REQUIRED
 
 PAYMENT-REQUIRED 原文（header base64）：
 ```
@@ -146,6 +123,31 @@ PAYMENT-REQUIRED 解码：
   ]
 }
 ```
+
+### 1.3 PAYMENT-REQUIRED 关键字段解释
+
+- 根对象
+  - `x402Version`: `2`
+  - `error`: `Payment required`
+  - `resource`: 资源元信息对象
+  - `accepts`: 可接受支付条件数组
+
+- `resource` 对象
+  - `resource.url`: `http://localhost:4020/premium/svm-data`
+  - `resource.description`: `Premium x402-protected JSON (SVM)`
+  - `resource.mimeType`: `application/json`
+
+- `accepts[0]` 对象（本次选中条款）
+  - `accepts[0].scheme`: `exact` — 精确金额支付模式
+  - `accepts[0].network`: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` — Solana Devnet（CAIP-2 格式，`EtWTRABZaYq6iMfeYKouRu166VU2xqa1` 是 Devnet 的 genesis hash 前缀）
+  - `accepts[0].asset`: `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` — USDC SPL Token Mint（Devnet）
+  - `accepts[0].amount`: `1` — 最小单位（1 = 0.000001 USDC，因 USDC decimals=6）
+  - `accepts[0].payTo`: `E55qLKqvQYabUwW6dhkC1QXTMfaYf2sX7p7UvETYXDZ1` — 收款方 Solana 地址
+  - `accepts[0].maxTimeoutSeconds`: `300` — 签名最大有效期（5 分钟）
+  - `accepts[0].extra`: 附加信息对象
+
+- `accepts[0].extra` 对象
+  - `accepts[0].extra.feePayer`: `CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5` — Facilitator 提供的 gas 代付账户（Solana 上交易费由此账户支付，买方无需持有 SOL）
 
 ---
 
@@ -199,27 +201,12 @@ AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 - URL：`http://localhost:4020/premium/svm-data`
 - 耗时：2165 ms
 
-**PAYMENT-SIGNATURE 对象解释（按层级）**：
+PAYMENT-SIGNATURE 原文（header base64）：
+```
+eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJ0cmFuc2FjdGlvbiI6IkFnQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ2VudlZnZlhBQjZJb3F4R3RBM3AxU05ZKzhMek9VV0VjZ0FhaWQ5ZXZKTlNwY1Z0WndCcXFvYWlxK3QyelI5MFNFd0hubnFUR3JHdEsxYW1LYWNUa05nQUlCQkFlb0pqNDIzMVFsVWRLMmIwZkozVlV4aW9nUlhkME5RaEJ2Sk82MjJaVUtmc0l6dCtWYmVkMnR0Z0ZLTGFqOXFQQUhsa0hWZGh2MTBmVElUVzhxOE4yUWF0Tnhva1ZjejVJcE1kNlVVREZVRlZGWGorZU10OUw3MUtYSFRlbHlwc2s3UkN5emtTRlg4VHFUUFFFMEtDMERLMS8relFHaTIvRzNlUVlJM3dBdXB3TUdSbS9sSVJjeS8reXR1bkxEbStlOGpPVzd4ZmNTYXl4RG16cEFBQUFBQlVwVFdwa3BJUVpOSk9oeFlObzRmSHcxdGQyOGtydUI1QitvUUVFRlJJMEczZmJoMTJXaGs5bkw0VWJPNjNtc0hMU0Y3VjliTjVFNmpQV0ZmdjhBcWR4OW50NmhzRkhtRXYzRFRwV1FDSjcxVk9RTENZQlhmeEFwRkpKTlpNMlVCQVFBQlFJZ1RnQUFCQUFKQXdFQUFBQUFBQUFBQmdRQ0F3SUJDZ3dCQUFBQUFBQUFBQVlGQUNCaE9XWm1PV1U1WTJRMlpHRmlPREU0WldKbFpHSTBNRE0wWTJRek9UUTBZZ0E9In0sInJlc291cmNlIjp7InVybCI6Imh0dHA6Ly9sb2NhbGhvc3Q6NDAyMC9wcmVtaXVtL3N2bS1kYXRhIiwiZGVzY3JpcHRpb24iOiJQcmVtaXVtIHg0MDItcHJvdGVjdGVkIEpTT04gKFNWTSkiLCJtaW1lVHlwZSI6ImFwcGxpY2F0aW9uL2pzb24ifSwiYWNjZXB0ZWQiOnsic2NoZW1lIjoiZXhhY3QiLCJuZXR3b3JrIjoic29sYW5hOkV0V1RSQUJaYVlxNmlNZmVZS291UnUxNjZWVTJ4cWExIiwiYW1vdW50IjoiMSIsImFzc2V0IjoiNHpNTUM5c3J0NVJpNVgxNEdBZ1hoYUhpaTNHblBBRUVSWVBKZ1pKRG5jRFUiLCJwYXlUbyI6IkU1NXFMS3F2UVlhYlV3VzZkaGtDMVFYVE1mYVlmMnNYN3A3VXZFVFlYRFoxIiwibWF4VGltZW91dFNlY29uZHMiOjMwMCwiZXh0cmEiOnsiZmVlUGF5ZXIiOiJDS1BLSldOZEpFcWE4MXg3Q2taMTRCVlBpWTZ5MTZTeHM3b3d6bnF0V1lwNSJ9fX0=
+```
 
-- 根对象
-  - `x402Version`: `2`
-  - `payload`: 签名载荷对象
-  - `resource`: 资源对象（与首跳 challenge 对齐）
-  - `accepted`: 本次接受的支付条款对象
-
-- `payload` 对象
-  - `payload.transaction`: base64 编码的完整 Solana transaction（含 2.2 中的签名 + 指令 + 账户）
-
-- `accepted` 对象（与首跳 `accepts[0]` 一致）
-  - `accepted.scheme`: `exact`
-  - `accepted.network`: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`
-  - `accepted.asset`: `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`（USDC Devnet Mint）
-  - `accepted.amount`: `1`（0.000001 USDC）
-  - `accepted.payTo`: `E55qLKqvQYabUwW6dhkC1QXTMfaYf2sX7p7UvETYXDZ1`
-  - `accepted.maxTimeoutSeconds`: `300`
-  - `accepted.extra.feePayer`: `CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5`
-
-PAYMENT-SIGNATURE 完整解码：
+PAYMENT-SIGNATURE 解码：
 
 ```json
 {
@@ -246,12 +233,27 @@ PAYMENT-SIGNATURE 完整解码：
 }
 ```
 
-PAYMENT-SIGNATURE 原文（header base64）：
-```
-eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJ0cmFuc2FjdGlvbiI6IkFnQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ2VudlZnZlhBQjZJb3F4R3RBM3AxU05ZKzhMek9VV0VjZ0FhaWQ5ZXZKTlNwY1Z0WndCcXFvYWlxK3QyelI5MFNFd0hubnFUR3JHdEsxYW1LYWNUa05nQUlCQkFlb0pqNDIzMVFsVWRLMmIwZkozVlV4aW9nUlhkME5RaEJ2Sk82MjJaVUtmc0l6dCtWYmVkMnR0Z0ZLTGFqOXFQQUhsa0hWZGh2MTBmVElUVzhxOE4yUWF0Tnhva1ZjejVJcE1kNlVVREZVRlZGWGorZU10OUw3MUtYSFRlbHlwc2s3UkN5emtTRlg4VHFUUFFFMEtDMERLMS8relFHaTIvRzNlUVlJM3dBdXB3TUdSbS9sSVJjeS8reXR1bkxEbStlOGpPVzd4ZmNTYXl4RG16cEFBQUFBQlVwVFdwa3BJUVpOSk9oeFlObzRmSHcxdGQyOGtydUI1QitvUUVFRlJJMEczZmJoMTJXaGs5bkw0VWJPNjNtc0hMU0Y3VjliTjVFNmpQV0ZmdjhBcWR4OW50NmhzRkhtRXYzRFRwV1FDSjcxVk9RTENZQlhmeEFwRkpKTlpNMlVCQVFBQlFJZ1RnQUFCQUFKQXdFQUFBQUFBQUFBQmdRQ0F3SUJDZ3dCQUFBQUFBQUFBQVlGQUNCaE9XWm1PV1U1WTJRMlpHRmlPREU0WldKbFpHSTBNRE0wWTJRek9UUTBZZ0E9In0sInJlc291cmNlIjp7InVybCI6Imh0dHA6Ly9sb2NhbGhvc3Q6NDAyMC9wcmVtaXVtL3N2bS1kYXRhIiwiZGVzY3JpcHRpb24iOiJQcmVtaXVtIHg0MDItcHJvdGVjdGVkIEpTT04gKFNWTSkiLCJtaW1lVHlwZSI6ImFwcGxpY2F0aW9uL2pzb24ifSwiYWNjZXB0ZWQiOnsic2NoZW1lIjoiZXhhY3QiLCJuZXR3b3JrIjoic29sYW5hOkV0V1RSQUJaYVlxNmlNZmVZS291UnUxNjZWVTJ4cWExIiwiYW1vdW50IjoiMSIsImFzc2V0IjoiNHpNTUM5c3J0NVJpNVgxNEdBZ1hoYUhpaTNHblBBRUVSWVBKZ1pKRG5jRFUiLCJwYXlUbyI6IkU1NXFMS3F2UVlhYlV3VzZkaGtDMVFYVE1mYVlmMnNYN3A3VXZFVFlYRFoxIiwibWF4VGltZW91dFNlY29uZHMiOjMwMCwiZXh0cmEiOnsiZmVlUGF5ZXIiOiJDS1BLSldOZEpFcWE4MXg3Q2taMTRCVlBpWTZ5MTZTeHM3b3d6bnF0V1lwNSJ9fX0=
-```
+### 2.4 PAYMENT-SIGNATURE 关键字段解释
 
-### 2.4 EVM vs SVM 签名方式对比
+- 根对象
+  - `x402Version`: `2`
+  - `payload`: 签名载荷对象
+  - `resource`: 资源对象（与首跳 challenge 对齐）
+  - `accepted`: 本次接受的支付条款对象
+
+- `payload` 对象
+  - `payload.transaction`: base64 编码的完整 Solana transaction（含 2.2 中的签名 + 指令 + 账户）
+
+- `accepted` 对象（与首跳 `accepts[0]` 一致）
+  - `accepted.scheme`: `exact`
+  - `accepted.network`: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`
+  - `accepted.asset`: `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`（USDC Devnet Mint）
+  - `accepted.amount`: `1`（0.000001 USDC）
+  - `accepted.payTo`: `E55qLKqvQYabUwW6dhkC1QXTMfaYf2sX7p7UvETYXDZ1`
+  - `accepted.maxTimeoutSeconds`: `300`
+  - `accepted.extra.feePayer`: `CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5`
+
+### 2.5 EVM vs SVM 签名方式对比
 
 | 维度 | EVM (exact) | SVM (exact) |
 |---|---|---|
@@ -266,8 +268,9 @@ eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJ0cmFuc2FjdGlvbiI6IkFnQUFBQUFBQUFBQUFBQUFB
 
 ## 3) Settlement 阶段（服务端验签与结算）
 
-### 3.1 PAYMENT-RESPONSE 作用
-`PAYMENT-RESPONSE` 是结算回执，说明服务端/Facilitator 已完成支付处理并在 Solana Devnet 上提交了交易。
+### 3.1 PAYMENT-RESPONSE
+
+`PAYMENT-RESPONSE` 是结算回执，说明 facilitator 已在 Solana Devnet 上完成交易提交。
 
 - 二跳响应状态：`200`
 - 响应体：`{"data":{"message":"x402 SVM payment succeeded","timestamp":"2026-03-14T03:20:12.837Z"}}`
@@ -288,7 +291,8 @@ PAYMENT-RESPONSE 解码：
 }
 ```
 
-关键参数解释：
+### 3.2 PAYMENT-RESPONSE 关键字段解释
+
 - `success`: `true` — 结算成功
 - `transaction`: `5JoCh9NYRYNEUeFRZ3dLrsGVci2prf63vvg8UpUc5KD6jpWj4DkCwUwPwZn9By11kvTWh9XFhbGJEsiqCTprx8P1` — Solana 交易签名（base58 编码，等价于 EVM 的 txHash）
 - `network`: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` — 结算网络

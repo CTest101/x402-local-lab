@@ -88,31 +88,7 @@ sequenceDiagram
 - 响应状态：`402`
 - 耗时：3 ms
 
-### 1.2 PAYMENT-REQUIRED 关键字段解释（按层级）
-
-- 根对象
-  - `x402Version`: `2`
-  - `error`: `Payment required`
-  - `resource`: 资源元信息对象
-  - `accepts`: 可接受支付条件数组
-
-- `resource` 对象
-  - `resource.url`: `http://localhost:4020/premium/data`
-  - `resource.description`: `Premium x402-protected JSON`
-  - `resource.mimeType`: `application/json`
-
-- `accepts[0]` 对象（本次选中条款）
-  - `accepts[0].scheme`: `exact` — 精确金额支付模式
-  - `accepts[0].network`: `eip155:84532` — Base Sepolia（CAIP-2 格式，chainId=84532）
-  - `accepts[0].asset`: `0x036CbD53842c5426634e7929541eC2318f3dCF7e` — USDC 合约地址（decimals=6）
-  - `accepts[0].amount`: `1000` — 最小单位（1000 = 0.001 USDC，因 USDC decimals=6）
-  - `accepts[0].payTo`: `0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24` — 收款方地址
-  - `accepts[0].maxTimeoutSeconds`: `300` — 签名最大有效期（5 分钟）
-  - `accepts[0].extra`: 资产/域附加信息
-
-- `accepts[0].extra` 对象（EIP-712 domain 参数，用于构造签名）
-  - `accepts[0].extra.name`: `USDC` — EIP-712 domain name
-  - `accepts[0].extra.version`: `2` — EIP-712 domain version
+### 1.2 PAYMENT-REQUIRED
 
 PAYMENT-REQUIRED 原文（header base64）：
 ```
@@ -146,6 +122,32 @@ PAYMENT-REQUIRED 解码：
   ]
 }
 ```
+
+### 1.3 PAYMENT-REQUIRED 关键字段解释
+
+- 根对象
+  - `x402Version`: `2`
+  - `error`: `Payment required`
+  - `resource`: 资源元信息对象
+  - `accepts`: 可接受支付条件数组
+
+- `resource` 对象
+  - `resource.url`: `http://localhost:4020/premium/data`
+  - `resource.description`: `Premium x402-protected JSON`
+  - `resource.mimeType`: `application/json`
+
+- `accepts[0]` 对象（本次选中条款）
+  - `accepts[0].scheme`: `exact` — 精确金额支付模式
+  - `accepts[0].network`: `eip155:84532` — Base Sepolia（CAIP-2 格式，chainId=84532）
+  - `accepts[0].asset`: `0x036CbD53842c5426634e7929541eC2318f3dCF7e` — USDC 合约地址（decimals=6）
+  - `accepts[0].amount`: `1000` — 最小单位（1000 = 0.001 USDC，因 USDC decimals=6）
+  - `accepts[0].payTo`: `0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24` — 收款方地址
+  - `accepts[0].maxTimeoutSeconds`: `300` — 签名最大有效期（5 分钟）
+  - `accepts[0].extra`: 资产/域附加信息
+
+- `accepts[0].extra` 对象（EIP-712 domain 参数，用于构造签名）
+  - `accepts[0].extra.name`: `USDC` — EIP-712 domain name
+  - `accepts[0].extra.version`: `2` — EIP-712 domain version
 
 ---
 
@@ -216,36 +218,12 @@ Client 用 ECDSA secp256k1 私钥对上述 EIP-712 typed data 进行签名，输
 - URL：`http://localhost:4020/premium/data`
 - 耗时：1120 ms
 
-**PAYMENT-SIGNATURE 对象解释（按层级）**：
+PAYMENT-SIGNATURE 原文（header base64）：
+```
+eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweDkyRjZFOWRlQmJFYjc3OGEyNDU5MTZDZjUyREQ3RjU0NDI5RmZmMjQiLCJ0byI6IjB4OTJGNkU5ZGVCYkViNzc4YTI0NTkxNkNmNTJERDdGNTQ0MjlGZmYyNCIsInZhbHVlIjoiMTAwMCIsInZhbGlkQWZ0ZXIiOiIxNzczMTU0NzY3IiwidmFsaWRCZWZvcmUiOiIxNzczMTU1NjY3Iiwibm9uY2UiOiIweDQ2YWNhN2FmYzAzYmU5ODBjMjI4MWE3NDBiOWYxY2ZmYTgxYWE3NGZmNmI2ZTUxYjIzNDA4MDMwMjI1OGM0ZTcifSwic2lnbmF0dXJlIjoiMHg1YTlkNGFkOWI2ZTI4MDMxY2Y2ZWNkNTJjOGFjNTdjYWYzNzJlOWU4ZjY2YTkwZjBmMjI5NDdlZGEyZTA5MDAyMzY2YjQyYWEyYTczNWEwNzA0NTYyYWNmOWE3ZDA2M2M0OGY2OWY3MzdlNmEyYjFlNWUyNzY0ZTRiNTc4ODY1ZjFjIn0sInJlc291cmNlIjp7InVybCI6Imh0dHA6Ly9sb2NhbGhvc3Q6NDAyMC9wcmVtaXVtL2RhdGEiLCJkZXNjcmlwdGlvbiI6IlByZW1pdW0geDQwMi1wcm90ZWN0ZWQgSlNPTiIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vanNvbiJ9LCJhY2NlcHRlZCI6eyJzY2hlbWUiOiJleGFjdCIsIm5ldHdvcmsiOiJlaXAxNTU6ODQ1MzIiLCJhbW91bnQiOiIxMDAwIiwiYXNzZXQiOiIweDAzNkNiRDUzODQyYzU0MjY2MzRlNzkyOTU0MWVDMjMxOGYzZENGN2UiLCJwYXlUbyI6IjB4OTJGNkU5ZGVCYkViNzc4YTI0NTkxNkNmNTJERDdGNTQ0MjlGZmYyNCIsIm1heFRpbWVvdXRTZWNvbmRzIjozMDAsImV4dHJhIjp7Im5hbWUiOiJVU0RDIiwidmVyc2lvbiI6IjIifX19
+```
 
-- 根对象
-  - `x402Version`: `2`
-  - `payload`: 签名载荷对象
-  - `resource`: 资源对象（与首跳 challenge 对齐）
-  - `accepted`: 本次接受的支付条款对象
-
-- `payload` 对象
-  - `payload.authorization`: EIP-3009 `TransferWithAuthorization` 被签名核心消息（即 2.1 中的 message）
-  - `payload.signature`: 2.2 中的 ECDSA 签名结果
-
-- `payload.authorization` 对象
-  - `payload.authorization.from`: `0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24` — 付款方地址
-  - `payload.authorization.to`: `0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24` — 收款方地址
-  - `payload.authorization.value`: `1000` — 转账金额（最小单位）
-  - `payload.authorization.validAfter`: `1773154767` — 签名生效时间（Unix timestamp）
-  - `payload.authorization.validBefore`: `1773155667` — 签名过期时间（Unix timestamp）
-  - `payload.authorization.nonce`: `0x46aca7afc03be980c2281a740b9f1cffa81aa74ff6b6e51b234080302258c4e7` — 随机 nonce（bytes32，防重放）
-
-- `accepted` 对象（与首跳 `accepts[0]` 一致）
-  - `accepted.scheme`: `exact`
-  - `accepted.network`: `eip155:84532`
-  - `accepted.asset`: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
-  - `accepted.amount`: `1000`
-  - `accepted.payTo`: `0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24`
-  - `accepted.maxTimeoutSeconds`: `300`
-  - `accepted.extra`: `{ name: "USDC", version: "2" }`
-
-PAYMENT-SIGNATURE 完整解码：
+PAYMENT-SIGNATURE 解码：
 
 ```json
 {
@@ -281,10 +259,34 @@ PAYMENT-SIGNATURE 完整解码：
 }
 ```
 
-PAYMENT-SIGNATURE 原文（header base64）：
-```
-eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweDkyRjZFOWRlQmJFYjc3OGEyNDU5MTZDZjUyREQ3RjU0NDI5RmZmMjQiLCJ0byI6IjB4OTJGNkU5ZGVCYkViNzc4YTI0NTkxNkNmNTJERDdGNTQ0MjlGZmYyNCIsInZhbHVlIjoiMTAwMCIsInZhbGlkQWZ0ZXIiOiIxNzczMTU0NzY3IiwidmFsaWRCZWZvcmUiOiIxNzczMTU1NjY3Iiwibm9uY2UiOiIweDQ2YWNhN2FmYzAzYmU5ODBjMjI4MWE3NDBiOWYxY2ZmYTgxYWE3NGZmNmI2ZTUxYjIzNDA4MDMwMjI1OGM0ZTcifSwic2lnbmF0dXJlIjoiMHg1YTlkNGFkOWI2ZTI4MDMxY2Y2ZWNkNTJjOGFjNTdjYWYzNzJlOWU4ZjY2YTkwZjBmMjI5NDdlZGEyZTA5MDAyMzY2YjQyYWEyYTczNWEwNzA0NTYyYWNmOWE3ZDA2M2M0OGY2OWY3MzdlNmEyYjFlNWUyNzY0ZTRiNTc4ODY1ZjFjIn0sInJlc291cmNlIjp7InVybCI6Imh0dHA6Ly9sb2NhbGhvc3Q6NDAyMC9wcmVtaXVtL2RhdGEiLCJkZXNjcmlwdGlvbiI6IlByZW1pdW0geDQwMi1wcm90ZWN0ZWQgSlNPTiIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vanNvbiJ9LCJhY2NlcHRlZCI6eyJzY2hlbWUiOiJleGFjdCIsIm5ldHdvcmsiOiJlaXAxNTU6ODQ1MzIiLCJhbW91bnQiOiIxMDAwIiwiYXNzZXQiOiIweDAzNkNiRDUzODQyYzU0MjY2MzRlNzkyOTU0MWVDMjMxOGYzZENGN2UiLCJwYXlUbyI6IjB4OTJGNkU5ZGVCYkViNzc4YTI0NTkxNkNmNTJERDdGNTQ0MjlGZmYyNCIsIm1heFRpbWVvdXRTZWNvbmRzIjozMDAsImV4dHJhIjp7Im5hbWUiOiJVU0RDIiwidmVyc2lvbiI6IjIifX19
-```
+### 2.4 PAYMENT-SIGNATURE 关键字段解释
+
+- 根对象
+  - `x402Version`: `2`
+  - `payload`: 签名载荷对象
+  - `resource`: 资源对象（与首跳 challenge 对齐）
+  - `accepted`: 本次接受的支付条款对象
+
+- `payload` 对象
+  - `payload.authorization`: EIP-3009 `TransferWithAuthorization` 被签名核心消息（即 2.1 中的 message）
+  - `payload.signature`: 2.2 中的 ECDSA 签名结果
+
+- `payload.authorization` 对象
+  - `payload.authorization.from`: `0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24` — 付款方地址
+  - `payload.authorization.to`: `0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24` — 收款方地址
+  - `payload.authorization.value`: `1000` — 转账金额（最小单位）
+  - `payload.authorization.validAfter`: `1773154767` — 签名生效时间（Unix timestamp）
+  - `payload.authorization.validBefore`: `1773155667` — 签名过期时间（Unix timestamp）
+  - `payload.authorization.nonce`: `0x46aca7afc03be980c2281a740b9f1cffa81aa74ff6b6e51b234080302258c4e7` — 随机 nonce（bytes32，防重放）
+
+- `accepted` 对象（与首跳 `accepts[0]` 一致）
+  - `accepted.scheme`: `exact`
+  - `accepted.network`: `eip155:84532`
+  - `accepted.asset`: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
+  - `accepted.amount`: `1000`
+  - `accepted.payTo`: `0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24`
+  - `accepted.maxTimeoutSeconds`: `300`
+  - `accepted.extra`: `{ name: "USDC", version: "2" }`
 
 ---
 
@@ -313,7 +315,8 @@ PAYMENT-RESPONSE 解码：
 }
 ```
 
-关键参数解释：
+### 3.2 PAYMENT-RESPONSE 关键字段解释
+
 - `success`: `true` — 结算成功
 - `transaction`: `0xa753c83...` — 链上结算交易哈希（facilitator 发起的 `transferWithAuthorization` 调用）
 - `network`: `eip155:84532` — Base Sepolia
