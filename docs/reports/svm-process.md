@@ -151,19 +151,55 @@ PAYMENT-REQUIRED 解码：
 
 ## 2) Signature 阶段（签名构造与参数）
 
-### 2.1 二跳请求（作用）
-二跳请求的作用是证明"付款方已同意按首跳条件支付"。与 EVM 的 EIP-712 typed data 签名不同，SVM 的签名对象是一个 **完整的序列化 Solana transaction**。
+### 2.1 构造 Solana Transaction
+
+Client 从首跳的 `accepts[0]` 中提取参数，构造一笔 Solana SPL Token 转账交易。与 EVM 的 EIP-712 typed data 不同，SVM 的签名对象是一个 **完整的序列化 Solana transaction**。
+
+**Transaction 构造参数来源**：
+- `asset`（`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`）→ USDC SPL Token Mint
+- `amount`（`1`）→ 转账金额（最小单位）
+- `payTo`（`E55qLKqvQYabUwW6dhkC1QXTMfaYf2sX7p7UvETYXDZ1`）→ 收款方地址
+- `extra.feePayer`（`CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5`）→ facilitator 提供的 gas 代付账户
+
+**Transaction 结构说明**：
+
+- **签名数量**：2（payer 签名 + feePayer 签名占位）
+  - 签名 #1：全零（feePayer 占位，由 facilitator 在 settle 阶段补签）
+  - 签名 #2：买方 Ed25519 签名（对 transaction message 签名）
+
+- **账户列表**（transaction message 中的 accountKeys）：
+  - `E55qLKqvQYabUwW6dhkC1QXTMfaYf2sX7p7UvETYXDZ1` — 买方（payer/source）
+  - 买方 USDC ATA（Associated Token Account）
+  - 收款方 USDC ATA
+  - `CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5` — feePayer（facilitator 代付 gas）
+  - SPL Token Program（`TokenkegQEqhL2PnEfl6YQ9d3pMt2Wqd1G8ptH5kP6v5FQxo`）
+  - System Program
+  - `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` — USDC Mint
+
+- **指令**：
+  - SPL Token `Transfer` / `TransferChecked`：从买方 USDC ATA 转 `amount=1`（0.000001 USDC）到收款方 USDC ATA
+  - Memo 指令：附带唯一 nonce 标识（防重放）
+
+- **Recent Blockhash**：绑定当前 Solana slot，约 60-90 秒有效期（~150 slots）
+
+### 2.2 签名
+
+Client 用 Ed25519 私钥对 Solana transaction message 进行签名。签名直接嵌入 transaction 的 signatures 数组中（第 2 个签名位）。第 1 个签名位保留全零，由 facilitator 在 settle 阶段用 feePayer 私钥补签。
+
+序列化后的 transaction（base64）：
+```
+AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACenvVgfXAB6IoqxGtA3p1SNY+8LzOUWEcgAaid9evJNSpcVtZwBqqoaiq+t2zR90SEwHnnqTGrGtK1amKacTkNgAIBBAeoJj4231QlUdK2b0fJ3VUxiogRXd0NQhBvJO622ZUKfsIzt+Vbed2ttgFKLaj9qPAHlkHVdhv10fTITW8q8N2QatNxokVcz5IpMd6UUDFUFVFXj+eMt9L71KXHTelypsk7RCyzkSFX8TqTPQE0KC0DK1/+zQGi2/G3eQYI3wAupwMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAABUpTWpkpIQZNJOhxYNo4fHw1td28kruB5B+oQEEFRI0G3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8Aqdx9nt6hsFHmEv3DTpWQCJ71VOQLCYBXfxApFJJNZM2UBAQABQIgTgAABAAJAwEAAAAAAAAABgQCAwIBCgwBAAAAAAAAAAYFACBhOWZmOWU5Y2Q2ZGFiODE4ZWJlZGI0MDM0Y2QzOTQ0YgA=
+```
+
+### 2.3 组装 PAYMENT-SIGNATURE 并发送二跳请求
+
+签名完成后，Client 将 `payload`（序列化 transaction）、`resource`、`accepted` 组装为完整的 PAYMENT-SIGNATURE 对象，base64 编码后作为 HTTP header 发送。
 
 - Method：`GET`
 - URL：`http://localhost:4020/premium/svm-data`
 - 耗时：2165 ms
 
-PAYMENT-SIGNATURE 原文（header base64）：
-```
-eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJ0cmFuc2FjdGlvbiI6IkFnQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ2VudlZnZlhBQjZJb3F4R3RBM3AxU05ZKzhMek9VV0VjZ0FhaWQ5ZXZKTlNwY1Z0WndCcXFvYWlxK3QyelI5MFNFd0hubnFUR3JHdEsxYW1LYWNUa05nQUlCQkFlb0pqNDIzMVFsVWRLMmIwZkozVlV4aW9nUlhkME5RaEJ2Sk82MjJaVUtmc0l6dCtWYmVkMnR0Z0ZLTGFqOXFQQUhsa0hWZGh2MTBmVElUVzhxOE4yUWF0Tnhva1ZjejVJcE1kNlVVREZVRlZGWGorZU10OUw3MUtYSFRlbHlwc2s3UkN5emtTRlg4VHFUUFFFMEtDMERLMS8relFHaTIvRzNlUVlJM3dBdXB3TUdSbS9sSVJjeS8reXR1bkxEbStlOGpPVzd4ZmNTYXl4RG16cEFBQUFBQlVwVFdwa3BJUVpOSk9oeFlObzRmSHcxdGQyOGtydUI1QitvUUVFRlJJMEczZmJoMTJXaGs5bkw0VWJPNjNtc0hMU0Y3VjliTjVFNmpQV0ZmdjhBcWR4OW50NmhzRkhtRXYzRFRwV1FDSjcxVk9RTENZQlhmeEFwRkpKTlpNMlVCQVFBQlFJZ1RnQUFCQUFKQXdFQUFBQUFBQUFBQmdRQ0F3SUJDZ3dCQUFBQUFBQUFBQVlGQUNCaE9XWm1PV1U1WTJRMlpHRmlPREU0WldKbFpHSTBNRE0wWTJRek9UUTBZZ0E9In0sInJlc291cmNlIjp7InVybCI6Imh0dHA6Ly9sb2NhbGhvc3Q6NDAyMC9wcmVtaXVtL3N2bS1kYXRhIiwiZGVzY3JpcHRpb24iOiJQcmVtaXVtIHg0MDItcHJvdGVjdGVkIEpTT04gKFNWTSkiLCJtaW1lVHlwZSI6ImFwcGxpY2F0aW9uL2pzb24ifSwiYWNjZXB0ZWQiOnsic2NoZW1lIjoiZXhhY3QiLCJuZXR3b3JrIjoic29sYW5hOkV0V1RSQUJaYVlxNmlNZmVZS291UnUxNjZWVTJ4cWExIiwiYW1vdW50IjoiMSIsImFzc2V0IjoiNHpNTUM5c3J0NVJpNVgxNEdBZ1hoYUhpaTNHblBBRUVSWVBKZ1pKRG5jRFUiLCJwYXlUbyI6IkU1NXFMS3F2UVlhYlV3VzZkaGtDMVFYVE1mYVlmMnNYN3A3VXZFVFlYRFoxIiwibWF4VGltZW91dFNlY29uZHMiOjMwMCwiZXh0cmEiOnsiZmVlUGF5ZXIiOiJDS1BLSldOZEpFcWE4MXg3Q2taMTRCVlBpWTZ5MTZTeHM3b3d6bnF0V1lwNSJ9fX0=
-```
-
-### 2.2 签名对象解释（按层级）
+**PAYMENT-SIGNATURE 对象解释（按层级）**：
 
 - 根对象
   - `x402Version`: `2`
@@ -172,7 +208,7 @@ eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJ0cmFuc2FjdGlvbiI6IkFnQUFBQUFBQUFBQUFBQUFB
   - `accepted`: 本次接受的支付条款对象
 
 - `payload` 对象
-  - `payload.transaction`: base64 编码的完整 Solana transaction（包含签名 + 指令 + 账户）
+  - `payload.transaction`: base64 编码的完整 Solana transaction（含 2.2 中的签名 + 指令 + 账户）
 
 - `accepted` 对象（与首跳 `accepts[0]` 一致）
   - `accepted.scheme`: `exact`
@@ -183,9 +219,7 @@ eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJ0cmFuc2FjdGlvbiI6IkFnQUFBQUFBQUFBQUFBQUFB
   - `accepted.maxTimeoutSeconds`: `300`
   - `accepted.extra.feePayer`: `CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5`
 
-支付方地址（Payer）：`E55qLKqvQYabUwW6dhkC1QXTMfaYf2sX7p7UvETYXDZ1`
-
-签名对象（完整解码）：
+PAYMENT-SIGNATURE 完整解码：
 
 ```json
 {
@@ -212,32 +246,12 @@ eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJ0cmFuc2FjdGlvbiI6IkFnQUFBQUFBQUFBQUFBQUFB
 }
 ```
 
-### 2.3 Solana Transaction 解析
+PAYMENT-SIGNATURE 原文（header base64）：
+```
+eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJ0cmFuc2FjdGlvbiI6IkFnQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ2VudlZnZlhBQjZJb3F4R3RBM3AxU05ZKzhMek9VV0VjZ0FhaWQ5ZXZKTlNwY1Z0WndCcXFvYWlxK3QyelI5MFNFd0hubnFUR3JHdEsxYW1LYWNUa05nQUlCQkFlb0pqNDIzMVFsVWRLMmIwZkozVlV4aW9nUlhkME5RaEJ2Sk82MjJaVUtmc0l6dCtWYmVkMnR0Z0ZLTGFqOXFQQUhsa0hWZGh2MTBmVElUVzhxOE4yUWF0Tnhva1ZjejVJcE1kNlVVREZVRlZGWGorZU10OUw3MUtYSFRlbHlwc2s3UkN5emtTRlg4VHFUUFFFMEtDMERLMS8relFHaTIvRzNlUVlJM3dBdXB3TUdSbS9sSVJjeS8reXR1bkxEbStlOGpPVzd4ZmNTYXl4RG16cEFBQUFBQlVwVFdwa3BJUVpOSk9oeFlObzRmSHcxdGQyOGtydUI1QitvUUVFRlJJMEczZmJoMTJXaGs5bkw0VWJPNjNtc0hMU0Y3VjliTjVFNmpQV0ZmdjhBcWR4OW50NmhzRkhtRXYzRFRwV1FDSjcxVk9RTENZQlhmeEFwRkpKTlpNMlVCQVFBQlFJZ1RnQUFCQUFKQXdFQUFBQUFBQUFBQmdRQ0F3SUJDZ3dCQUFBQUFBQUFBQVlGQUNCaE9XWm1PV1U1WTJRMlpHRmlPREU0WldKbFpHSTBNRE0wWTJRek9UUTBZZ0E9In0sInJlc291cmNlIjp7InVybCI6Imh0dHA6Ly9sb2NhbGhvc3Q6NDAyMC9wcmVtaXVtL3N2bS1kYXRhIiwiZGVzY3JpcHRpb24iOiJQcmVtaXVtIHg0MDItcHJvdGVjdGVkIEpTT04gKFNWTSkiLCJtaW1lVHlwZSI6ImFwcGxpY2F0aW9uL2pzb24ifSwiYWNjZXB0ZWQiOnsic2NoZW1lIjoiZXhhY3QiLCJuZXR3b3JrIjoic29sYW5hOkV0V1RSQUJaYVlxNmlNZmVZS291UnUxNjZWVTJ4cWExIiwiYW1vdW50IjoiMSIsImFzc2V0IjoiNHpNTUM5c3J0NVJpNVgxNEdBZ1hoYUhpaTNHblBBRUVSWVBKZ1pKRG5jRFUiLCJwYXlUbyI6IkU1NXFMS3F2UVlhYlV3VzZkaGtDMVFYVE1mYVlmMnNYN3A3VXZFVFlYRFoxIiwibWF4VGltZW91dFNlY29uZHMiOjMwMCwiZXh0cmEiOnsiZmVlUGF5ZXIiOiJDS1BLSldOZEpFcWE4MXg3Q2taMTRCVlBpWTZ5MTZTeHM3b3d6bnF0V1lwNSJ9fX0=
+```
 
-> 与 EVM 的 EIP-712 typed data 不同，SVM 的 payload 是一个序列化的 Solana transaction。
-
-**Transaction 结构说明**：
-
-- **签名数量**：2（payer 签名 + feePayer 签名占位）
-  - 签名 #1：全零（feePayer 占位，由 facilitator 在 settle 阶段补签）
-  - 签名 #2：买方 Ed25519 签名（对 transaction message 签名）
-
-- **账户列表**（transaction message 中的 accountKeys）：
-  - `E55qLKqvQYabUwW6dhkC1QXTMfaYf2sX7p7UvETYXDZ1` — 买方（payer/source）
-  - 买方 USDC ATA（Associated Token Account）
-  - 收款方 USDC ATA
-  - `CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5` — feePayer（facilitator 代付 gas）
-  - SPL Token Program（`TokenkegQEqhL2PnEfl6YQ9d3pMt2Wqd1G8ptH5kP6v5FQxo`）
-  - System Program
-  - `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` — USDC Mint
-
-- **指令**：
-  - SPL Token `Transfer` / `TransferChecked`：从买方 USDC ATA 转 `amount=1`（0.000001 USDC）到收款方 USDC ATA
-  - Memo 指令：附带唯一 nonce 标识（防重放）
-
-- **Recent Blockhash**：绑定当前 Solana slot，约 60-90 秒有效期（~150 slots）
-
-**EVM vs SVM 签名方式对比**：
+### 2.4 EVM vs SVM 签名方式对比
 
 | 维度 | EVM (exact) | SVM (exact) |
 |---|---|---|

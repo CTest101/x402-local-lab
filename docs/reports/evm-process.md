@@ -151,20 +151,72 @@ PAYMENT-REQUIRED 解码：
 
 ## 2) Signature 阶段（签名构造与参数）
 
-### 2.1 二跳请求
+### 2.1 构造签名消息（EIP-712 Typed Data）
 
-二跳请求的作用是证明"付款方已同意按首跳条件支付"。
+Client 从首跳的 `accepts[0]` 中提取参数，按 EIP-3009 `TransferWithAuthorization` 规则构造 EIP-712 typed data。这是实际被签名的结构化消息。
+
+**EIP-712 domain 参数来源**：
+- `name` / `version`：来自 `accepts[0].extra`
+- `chainId`：从 `accepts[0].network`（`eip155:84532`）解析
+- `verifyingContract`：即 `accepts[0].asset`（USDC 合约地址）
+
+**message 参数来源**：
+- `from`：客户端钱包地址（付款方）
+- `to`：`accepts[0].payTo`（收款方）
+- `value`：`accepts[0].amount`（最小单位金额）
+- `validAfter` / `validBefore`：SDK 自动生成（当前时间 ± `maxTimeoutSeconds`）
+- `nonce`：随机 bytes32（防重放）
+
+```json
+{
+  "domain": {
+    "name": "USDC",
+    "version": "2",
+    "chainId": 84532,
+    "verifyingContract": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+  },
+  "types": {
+    "TransferWithAuthorization": [
+      { "name": "from", "type": "address" },
+      { "name": "to", "type": "address" },
+      { "name": "value", "type": "uint256" },
+      { "name": "validAfter", "type": "uint256" },
+      { "name": "validBefore", "type": "uint256" },
+      { "name": "nonce", "type": "bytes32" }
+    ]
+  },
+  "primaryType": "TransferWithAuthorization",
+  "message": {
+    "from": "0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24",
+    "to": "0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24",
+    "value": "1000",
+    "validAfter": "1773154767",
+    "validBefore": "1773155667",
+    "nonce": "0x46aca7afc03be980c2281a740b9f1cffa81aa74ff6b6e51b234080302258c4e7"
+  }
+}
+```
+
+### 2.2 签名
+
+Client 用 ECDSA secp256k1 私钥对上述 EIP-712 typed data 进行签名，输出 65 bytes 签名（r + s + v）：
+
+```
+0x5a9d4ad9b6e28031cf6ecd52c8ac57caf372e9e8f66a90f0f22947eda2e09002
+366b42aa2a735a0704562acf9a7d063c48f69f737e6a2b1e5e2764e4b578865f1c
+```
+
+签名结果与 `authorization` 消息一起组装为 `payload` 对象。
+
+### 2.3 组装 PAYMENT-SIGNATURE 并发送二跳请求
+
+签名完成后，Client 将 `payload`（authorization + signature）、`resource`、`accepted` 组装为完整的 PAYMENT-SIGNATURE 对象，base64 编码后作为 HTTP header 发送。
 
 - Method：`GET`
 - URL：`http://localhost:4020/premium/data`
 - 耗时：1120 ms
 
-PAYMENT-SIGNATURE 原文（header base64）：
-```
-eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweDkyRjZFOWRlQmJFYjc3OGEyNDU5MTZDZjUyREQ3RjU0NDI5RmZmMjQiLCJ0byI6IjB4OTJGNkU5ZGVCYkViNzc4YTI0NTkxNkNmNTJERDdGNTQ0MjlGZmYyNCIsInZhbHVlIjoiMTAwMCIsInZhbGlkQWZ0ZXIiOiIxNzczMTU0NzY3IiwidmFsaWRCZWZvcmUiOiIxNzczMTU1NjY3Iiwibm9uY2UiOiIweDQ2YWNhN2FmYzAzYmU5ODBjMjI4MWE3NDBiOWYxY2ZmYTgxYWE3NGZmNmI2ZTUxYjIzNDA4MDMwMjI1OGM0ZTcifSwic2lnbmF0dXJlIjoiMHg1YTlkNGFkOWI2ZTI4MDMxY2Y2ZWNkNTJjOGFjNTdjYWYzNzJlOWU4ZjY2YTkwZjBmMjI5NDdlZGEyZTA5MDAyMzY2YjQyYWEyYTczNWEwNzA0NTYyYWNmOWE3ZDA2M2M0OGY2OWY3MzdlNmEyYjFlNWUyNzY0ZTRiNTc4ODY1ZjFjIn0sInJlc291cmNlIjp7InVybCI6Imh0dHA6Ly9sb2NhbGhvc3Q6NDAyMC9wcmVtaXVtL2RhdGEiLCJkZXNjcmlwdGlvbiI6IlByZW1pdW0geDQwMi1wcm90ZWN0ZWQgSlNPTiIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vanNvbiJ9LCJhY2NlcHRlZCI6eyJzY2hlbWUiOiJleGFjdCIsIm5ldHdvcmsiOiJlaXAxNTU6ODQ1MzIiLCJhbW91bnQiOiIxMDAwIiwiYXNzZXQiOiIweDAzNkNiRDUzODQyYzU0MjY2MzRlNzkyOTU0MWVDMjMxOGYzZENGN2UiLCJwYXlUbyI6IjB4OTJGNkU5ZGVCYkViNzc4YTI0NTkxNkNmNTJERDdGNTQ0MjlGZmYyNCIsIm1heFRpbWVvdXRTZWNvbmRzIjozMDAsImV4dHJhIjp7Im5hbWUiOiJVU0RDIiwidmVyc2lvbiI6IjIifX19
-```
-
-### 2.2 签名对象解释（按层级）
+**PAYMENT-SIGNATURE 对象解释（按层级）**：
 
 - 根对象
   - `x402Version`: `2`
@@ -173,8 +225,8 @@ eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweDkyRjZF
   - `accepted`: 本次接受的支付条款对象
 
 - `payload` 对象
-  - `payload.authorization`: EIP-3009 `TransferWithAuthorization` 被签名核心消息
-  - `payload.signature`: ECDSA 签名结果（65 bytes hex，含 r+s+v）
+  - `payload.authorization`: EIP-3009 `TransferWithAuthorization` 被签名核心消息（即 2.1 中的 message）
+  - `payload.signature`: 2.2 中的 ECDSA 签名结果
 
 - `payload.authorization` 对象
   - `payload.authorization.from`: `0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24` — 付款方地址
@@ -193,7 +245,7 @@ eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweDkyRjZF
   - `accepted.maxTimeoutSeconds`: `300`
   - `accepted.extra`: `{ name: "USDC", version: "2" }`
 
-PAYMENT-SIGNATURE 解码：
+PAYMENT-SIGNATURE 完整解码：
 
 ```json
 {
@@ -229,42 +281,10 @@ PAYMENT-SIGNATURE 解码：
 }
 ```
 
-### 2.3 完整原始签名消息（EIP-712 Typed Data）
-
-> `payload.signature` 是对下面这份 EIP-712 typed data 的 ECDSA secp256k1 签名（primaryType: `TransferWithAuthorization`）。
-> 这是 EIP-3009 标准定义的 gasless token transfer 签名格式。
-
-```json
-{
-  "domain": {
-    "name": "USDC",
-    "version": "2",
-    "chainId": 84532,
-    "verifyingContract": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
-  },
-  "types": {
-    "TransferWithAuthorization": [
-      { "name": "from", "type": "address" },
-      { "name": "to", "type": "address" },
-      { "name": "value", "type": "uint256" },
-      { "name": "validAfter", "type": "uint256" },
-      { "name": "validBefore", "type": "uint256" },
-      { "name": "nonce", "type": "bytes32" }
-    ]
-  },
-  "primaryType": "TransferWithAuthorization",
-  "message": {
-    "from": "0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24",
-    "to": "0x92F6E9deBbEb778a245916Cf52DD7F54429Fff24",
-    "value": "1000",
-    "validAfter": "1773154767",
-    "validBefore": "1773155667",
-    "nonce": "0x46aca7afc03be980c2281a740b9f1cffa81aa74ff6b6e51b234080302258c4e7"
-  }
-}
+PAYMENT-SIGNATURE 原文（header base64）：
 ```
-
-**EIP-712 domain 参数来源**：`accepts[0].extra` 中的 `name` 和 `version` 字段 + `network` 中的 chainId + `asset` 作为 verifyingContract。
+eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweDkyRjZFOWRlQmJFYjc3OGEyNDU5MTZDZjUyREQ3RjU0NDI5RmZmMjQiLCJ0byI6IjB4OTJGNkU5ZGVCYkViNzc4YTI0NTkxNkNmNTJERDdGNTQ0MjlGZmYyNCIsInZhbHVlIjoiMTAwMCIsInZhbGlkQWZ0ZXIiOiIxNzczMTU0NzY3IiwidmFsaWRCZWZvcmUiOiIxNzczMTU1NjY3Iiwibm9uY2UiOiIweDQ2YWNhN2FmYzAzYmU5ODBjMjI4MWE3NDBiOWYxY2ZmYTgxYWE3NGZmNmI2ZTUxYjIzNDA4MDMwMjI1OGM0ZTcifSwic2lnbmF0dXJlIjoiMHg1YTlkNGFkOWI2ZTI4MDMxY2Y2ZWNkNTJjOGFjNTdjYWYzNzJlOWU4ZjY2YTkwZjBmMjI5NDdlZGEyZTA5MDAyMzY2YjQyYWEyYTczNWEwNzA0NTYyYWNmOWE3ZDA2M2M0OGY2OWY3MzdlNmEyYjFlNWUyNzY0ZTRiNTc4ODY1ZjFjIn0sInJlc291cmNlIjp7InVybCI6Imh0dHA6Ly9sb2NhbGhvc3Q6NDAyMC9wcmVtaXVtL2RhdGEiLCJkZXNjcmlwdGlvbiI6IlByZW1pdW0geDQwMi1wcm90ZWN0ZWQgSlNPTiIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vanNvbiJ9LCJhY2NlcHRlZCI6eyJzY2hlbWUiOiJleGFjdCIsIm5ldHdvcmsiOiJlaXAxNTU6ODQ1MzIiLCJhbW91bnQiOiIxMDAwIiwiYXNzZXQiOiIweDAzNkNiRDUzODQyYzU0MjY2MzRlNzkyOTU0MWVDMjMxOGYzZENGN2UiLCJwYXlUbyI6IjB4OTJGNkU5ZGVCYkViNzc4YTI0NTkxNkNmNTJERDdGNTQ0MjlGZmYyNCIsIm1heFRpbWVvdXRTZWNvbmRzIjozMDAsImV4dHJhIjp7Im5hbWUiOiJVU0RDIiwidmVyc2lvbiI6IjIifX19
+```
 
 ---
 
