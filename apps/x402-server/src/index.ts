@@ -76,6 +76,26 @@ function resolvePrice(context: any): string {
   return cfg.X402_PRICE_USD;
 }
 
+function unpaidBody(description: string, network: string, asset: string, payTo: string) {
+  return async (context: any) => {
+    const price = resolvePrice(context);
+    return {
+      contentType: "application/json",
+      body: {
+        error: "Payment required",
+        description,
+        price,
+        network,
+        asset,
+        assetSymbol: "USDC",
+        payTo,
+        facilitator: cfg.X402_FACILITATOR_URL,
+        hint: "Use ?amount=<USD> to set a custom price. Payment details are in the PAYMENT-REQUIRED response header (base64 JSON).",
+      },
+    };
+  };
+}
+
 function unpaidBodyMulti(description: string) {
   return async (context: any) => {
     const price = resolvePrice(context);
