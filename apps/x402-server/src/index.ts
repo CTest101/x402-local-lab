@@ -19,11 +19,42 @@ const resourceServer = new x402ResourceServer(facilitatorClient)
   .register(evmNetwork, new ExactEvmScheme())
   .register(svmNetwork, new ExactSvmScheme());
 
+/** Decode PAYMENT-REQUIRED header from the adapter context */
+function unpaidBody(description: string) {
+  return async (context: any) => {
+    const header = context.adapter?.getHeader?.("payment-required") ?? context.paymentHeader;
+    let paymentRequired: any = null;
+    // The header isn't set on the request — it's set on the response.
+    // We build the info from route config instead.
+    return {
+      contentType: "application/json",
+      body: {
+        error: "Payment required",
+        description,
+      },
+    };
+  };
+}
+
 const routes: Record<string, any> = {
   "GET /premium/evm": {
     accepts: [{ scheme: "exact", price: cfg.X402_PRICE_USD, network: evmNetwork, payTo: cfg.X402_SELLER_PAYTO }],
     description: "Premium x402-protected JSON (EVM)",
     mimeType: "application/json",
+    unpaidResponseBody: async () => ({
+      contentType: "application/json",
+      body: {
+        error: "Payment required",
+        description: "Premium x402-protected JSON (EVM)",
+        price: cfg.X402_PRICE_USD,
+        network: evmNetwork,
+        asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        assetSymbol: "USDC",
+        payTo: cfg.X402_SELLER_PAYTO,
+        facilitator: cfg.X402_FACILITATOR_URL,
+        hint: "Payment details are in the PAYMENT-REQUIRED response header (base64 JSON). Decode it to get the full accepts[] array with scheme, amount, and signing parameters.",
+      },
+    }),
   },
 };
 
@@ -32,6 +63,20 @@ if (cfg.X402_SVM_SELLER_PAYTO) {
     accepts: [{ scheme: "exact", price: cfg.X402_PRICE_USD, network: svmNetwork, asset: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", payTo: cfg.X402_SVM_SELLER_PAYTO }],
     description: "Premium x402-protected JSON (SVM)",
     mimeType: "application/json",
+    unpaidResponseBody: async () => ({
+      contentType: "application/json",
+      body: {
+        error: "Payment required",
+        description: "Premium x402-protected JSON (SVM)",
+        price: cfg.X402_PRICE_USD,
+        network: svmNetwork,
+        asset: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+        assetSymbol: "USDC",
+        payTo: cfg.X402_SVM_SELLER_PAYTO,
+        facilitator: cfg.X402_FACILITATOR_URL,
+        hint: "Payment details are in the PAYMENT-REQUIRED response header (base64 JSON). Decode it to get the full accepts[] array with scheme, amount, and signing parameters.",
+      },
+    }),
   };
 }
 
