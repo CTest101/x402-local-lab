@@ -76,7 +76,7 @@ function resolvePrice(context: any): string {
   return cfg.X402_PRICE_USD;
 }
 
-function unpaidBody(description: string, network: string, asset: string, payTo: string) {
+function unpaidBodyMulti(description: string) {
   return async (context: any) => {
     const price = resolvePrice(context);
     return {
@@ -85,12 +85,12 @@ function unpaidBody(description: string, network: string, asset: string, payTo: 
         error: "Payment required",
         description,
         price,
-        network,
-        asset,
-        assetSymbol: "USDC",
-        payTo,
+        options: [
+          { network: evmNetwork, asset: EVM_ASSET, assetSymbol: "USDC", payTo: cfg.X402_SELLER_PAYTO },
+          { network: svmNetwork, asset: SVM_ASSET, assetSymbol: "USDC", payTo: cfg.X402_SVM_SELLER_PAYTO },
+        ],
         facilitator: cfg.X402_FACILITATOR_URL,
-        hint: "Use ?amount=<USD> to set a custom price. Payment details are in the PAYMENT-REQUIRED response header (base64 JSON).",
+        hint: "This resource supports both EVM and SVM payments. Pick one to proceed. Use ?amount=<USD> to set a custom price.",
       },
     };
   };
@@ -111,6 +111,15 @@ const routes: Record<string, any> = {
     description: "Premium x402-protected JSON (SVM)",
     mimeType: "application/json",
     unpaidResponseBody: unpaidBody("Premium x402-protected JSON (SVM)", svmNetwork, SVM_ASSET, cfg.X402_SVM_SELLER_PAYTO),
+  },
+  "GET /premium/multi": {
+    accepts: [
+      { scheme: "exact", price: resolvePrice, network: evmNetwork, payTo: cfg.X402_SELLER_PAYTO },
+      { scheme: "exact", price: resolvePrice, network: svmNetwork, asset: SVM_ASSET, payTo: cfg.X402_SVM_SELLER_PAYTO },
+    ],
+    description: "Premium x402-protected JSON (Multi-chain)",
+    mimeType: "application/json",
+    unpaidResponseBody: unpaidBodyMulti("Premium x402-protected JSON (Multi-chain)"),
   },
 };
 
@@ -159,6 +168,19 @@ resourceServer.initialize().then(() => {
         payTo: cfg.X402_SVM_SELLER_PAYTO,
         asset: SVM_ASSET,
         assetSymbol: "USDC",
+        facilitator: cfg.X402_FACILITATOR_URL,
+      },
+    });
+  });
+
+  app.get("/premium/multi", (req, res) => {
+    const price = (req.query.amount as string) || cfg.X402_PRICE_USD;
+    res.json({
+      data: {
+        message: "x402 Multi-chain payment succeeded",
+        timestamp: new Date().toISOString(),
+        price,
+        info: "This resource was unlocked using either EVM or SVM payment.",
         facilitator: cfg.X402_FACILITATOR_URL,
       },
     });

@@ -88,6 +88,7 @@ curl "http://localhost:4020/premium/evm?amount=0.01"
 | `/health` | GET | 健康检查 |
 | `/premium/evm` | GET | EVM 付费资源（Base Sepolia USDC） |
 | `/premium/svm` | GET | SVM 付费资源（Solana Devnet USDC） |
+| `/premium/multi`| GET | 多链付费资源（EVM 或 SVM 均可） |
 
 **Query 参数**：
 - `?amount=<USD>` — 动态设置价格（如 `?amount=0.01` = 0.01 USDC）
