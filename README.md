@@ -1,12 +1,12 @@
 # x402-local-lab
 
-x402 协议本地测试环境。TypeScript monorepo，包含 EVM（Base Sepolia）和 SVM（Solana Devnet）双链支付服务端与客户端。
+x402 协议本地测试环境。TypeScript monorepo，包含 EVM（Base Sepolia）和 SVM（Solana Devnet）双链支付 + SIWX 身份认证。
 
 ## 项目结构
 
 ```
 apps/
-  x402-server/    Express server，x402 paywall middleware
+  x402-server/    Express server，x402 paywall + SIWX middleware
   x402-client/    fetch client，自动 402→签名→重试
 packages/
   config/         env schema 校验（zod）
@@ -59,41 +59,100 @@ X402_SVM_SELLER_PAYTO=YOUR_SOLANA_DEVNET_ADDRESS
 pnpm --filter @x402-local/server run dev
 ```
 
-Server 默认监听 `0.0.0.0:4020`。设置 `HOST=127.0.0.1` 可限制仅本机访问。
+Server 默认监听 `127.0.0.1:4020`。设置 `HOST=0.0.0.0` 可开启公网访问。
 
 ### 4. 验证
 
 ```bash
 # 健康检查
 curl http://localhost:4020/health
-# {"ok":true}
 
-# EVM 路由（402 Payment Required）
+# 单次付费路由（402）
 curl http://localhost:4020/premium/evm
-# 返回支付信息 + paymentRequired 解码数据
 
-# SVM 路由
-curl http://localhost:4020/premium/svm
+# SIWX 路由（402 + SIWX extension）
+curl http://localhost:4020/siwx/evm
 
 # 自定义价格
 curl "http://localhost:4020/premium/evm?amount=0.01"
 ```
 
-### Server 端点
+## Server 端点
 
-| 路径 | 方法 | 说明 |
-|------|------|------|
-| `/health` | GET | 健康检查 |
-| `/premium/evm` | GET | EVM 付费资源（Base Sepolia USDC） |
-| `/premium/svm` | GET | SVM 付费资源（Solana Devnet USDC） |
-| `/premium/multi`| GET | 多链付费资源（EVM 或 SVM 均可） |
+### Pay-per-request（单次付费，无 SIWX）
 
-**Query 参数**：
+| 路径 | 说明 |
+|------|------|
+| `GET /premium/evm` | EVM 单次付费（Base Sepolia USDC） |
+| `GET /premium/svm` | SVM 单次付费（Solana Devnet USDC） |
+| `GET /premium/multi` | 多链单次付费（EVM 或 SVM 均可） |
+
+每次请求都需要支付，不记录钱包身份。
+
+### SIWX（付一次 + 钱包签名复访）
+
+| 路径 | 说明 |
+|------|------|
+| `GET /siwx/evm` | EVM 付费 + SIWX 复访 |
+| `GET /siwx/svm` | SVM 付费 + SIWX 复访 |
+| `GET /siwx/multi` | 多链付费 + SIWX 复访 |
+| `GET /siwx/profile` | Auth-only：只需钱包签名，不需要付费 |
+
+首次需要支付，之后同一钱包发送 `SIGN-IN-WITH-X` header 即可免费访问。
+
+### 工具端点
+
+| 路径 | 说明 |
+|------|------|
+| `GET /health` | 健康检查 |
+| `GET /debug/siwx` | 查看已付费钱包地址（调试用） |
+
+### Query 参数
+
 - `?amount=<USD>` — 动态设置价格（如 `?amount=0.01` = 0.01 USDC）
 
-**402 Response**：Body 包含人类可读的支付信息 + `paymentRequired` 字段（PAYMENT-REQUIRED header 的 JSON 解码）
+### Response 增强
 
-**200 Response**：Body 包含业务数据 + `settlement` 字段（txHash、payer、network）
+- **402 Response**：Body 包含支付信息 + `paymentRequired` 字段（PAYMENT-REQUIRED header 的 JSON 解码）
+- **200 Response**：Body 包含业务数据 + `settlement` 字段（txHash、payer、network）
+
+## SIWX 标准流程
+
+```
+Client                           Server                          Facilitator
+  │                                │                                │
+  │── GET /siwx/evm ──────────────►│                                │
+  │◄── 402 + PAYMENT-REQUIRED ─────│                                │
+  │    {                           │                                │
+  │      accepts: [...],           │                                │
+  │      extensions: {             │                                │
+  │        "sign-in-with-x": {     │                                │
+  │          info: { nonce, ... }, │                                │
+  │          supportedChains: [...] │                                │
+  │        }                       │                                │
+  │      }                         │                                │
+  │    }                           │                                │
+  │                                │                                │
+  │  [首次：构造支付签名]            │                                │
+  │── GET + PAYMENT-SIGNATURE ────►│── verify ─────────────────────►│
+  │                                │◄── isValid=true ──────────────│
+  │                                │── settle ────────────────────►│
+  │                                │◄── txHash ───────────────────│
+  │                                │  [settle hook 记录钱包地址]     │
+  │◄── 200 + settlement ──────────│                                │
+  │                                │                                │
+  │  [后续：构造 SIWX 签名]         │                                │
+  │── GET + SIGN-IN-WITH-X ──────►│                                │
+  │                                │  [验签 → 查付费记录 → 放行]      │
+  │◄── 200（免付费）──────────────│                                │
+```
+
+### SIWX 注意事项
+
+- **EVM 地址必须使用 EIP-55 checksum 格式**（如 `0x16c4dCE25...`），全小写会导致验签失败
+- **SVM 签名使用 Base58 编码**，不是 hex 格式
+- **InMemorySIWxStorage**：server 重启后付费记录清空。生产环境应使用持久化存储
+- **标准流程**：不涉及 JWT，每次请求带 `SIGN-IN-WITH-X` header，server 直接验签
 
 ## Client 启动
 
@@ -160,14 +219,24 @@ Client                    Server                   Facilitator         Chain
   |<-- 200 + PAYMENT-RESPONSE + body                  |                  |
 ```
 
-- EVM：EIP-712 签名 + EIP-3009 `TransferWithAuthorization`
-- SVM：Solana Transaction 签名 + SPL Token `TransferChecked`
-- Gas 由 facilitator 代付（EVM + SVM），buyer 只需持有 USDC
+- **EVM**：EIP-712 签名 + EIP-3009 `TransferWithAuthorization`
+- **SVM**：Solana Transaction 签名 + SPL Token `TransferChecked`
+- **Gas**：facilitator 代付（EVM + SVM），buyer 只需持有 USDC
+- **SIWX**：CAIP-122 钱包签名认证，支持付费复访和 auth-only 两种模式
+
+## 技术栈
+
+- **@x402/express** 2.8.0 — Express middleware
+- **@x402/extensions** 2.8.0 — SIWX (Sign-In-With-X) extension
+- **@x402/evm** 2.8.0 — EVM exact scheme
+- **@x402/svm** 2.8.0 — SVM exact scheme
+- **@x402/core** 2.8.0 — Core protocol types and server
 
 ## 相关文档
 
 - [x402 协议规范](https://github.com/coinbase/x402)
+- [SIWX 文档](https://docs.x402.org/extensions/sign-in-with-x)
 - [EVM exact scheme](https://github.com/coinbase/x402/blob/main/specs/schemes/exact/scheme_exact_evm.md)
 - [SVM exact scheme](https://github.com/coinbase/x402/blob/main/specs/schemes/exact/scheme_exact_svm.md)
 - [x402 官方文档](https://docs.x402.org)
-- [CDP Facilitator 网络支持](https://docs.cdp.coinbase.com/x402/network-support)
+- [CAIP-122 标准](https://chainagnostic.org/CAIPs/caip-122)
