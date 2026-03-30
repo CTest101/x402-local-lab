@@ -1,11 +1,22 @@
 import { config as loadDotenv } from "dotenv";
 import path from "node:path";
 import express from "express";
-import { paymentMiddleware, x402ResourceServer } from "@x402/express";
+import {
+  paymentMiddlewareFromHTTPServer,
+  x402ResourceServer,
+  x402HTTPResourceServer,
+} from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { x402Version } from "@x402/core";
+import {
+  declareSIWxExtension,
+  siwxResourceServerExtension,
+  createSIWxSettleHook,
+  createSIWxRequestHook,
+  InMemorySIWxStorage,
+} from "@x402/extensions/sign-in-with-x";
 import { loadSharedConfig } from "@x402-local/config";
 
 loadDotenv({ path: path.resolve(process.cwd(), "../../.env") });
@@ -14,18 +25,18 @@ const cfg = loadSharedConfig();
 const evmNetwork = cfg.X402_NETWORK as `${string}:${string}`;
 const svmNetwork = cfg.X402_SVM_NETWORK as `${string}:${string}`;
 
+// --- SIWX storage (in-memory, tracks which wallets have paid) ---
+const siwxStorage = new InMemorySIWxStorage();
+
 const facilitatorClient = new HTTPFacilitatorClient({ url: cfg.X402_FACILITATOR_URL });
 const resourceServer = new x402ResourceServer(facilitatorClient)
   .register(evmNetwork, new ExactEvmScheme())
-  .register(svmNetwork, new ExactSvmScheme());
+  .register(svmNetwork, new ExactSvmScheme())
+  .registerExtension(siwxResourceServerExtension)        // auto-refresh nonce/timestamps
+  .onAfterSettle(createSIWxSettleHook({ storage: siwxStorage })); // record payments
 
 /**
- * Middleware: inject settlement result into JSON response body.
- *
- * Wraps res.end BEFORE paymentMiddleware. When paymentMiddleware flushes
- * the buffered response, it calls our wrapped res.end. At that point
- * PAYMENT-RESPONSE header is already set, so we can decode it and merge
- * settlement data into the JSON body.
+ * Middleware: inject settlement/payment-required data into JSON response body.
  */
 function injectSettlement(): express.RequestHandler {
   return (_req, res, next) => {
@@ -35,7 +46,6 @@ function injectSettlement(): express.RequestHandler {
       try {
         const body = JSON.parse(typeof chunk === "string" ? chunk : chunk.toString());
 
-        // Inject PAYMENT-RESPONSE (settlement result) into 200 body
         const prHeader = res.getHeader("PAYMENT-RESPONSE");
         if (prHeader) {
           const settlement = JSON.parse(Buffer.from(String(prHeader), "base64").toString("utf8"));
@@ -47,7 +57,6 @@ function injectSettlement(): express.RequestHandler {
           };
         }
 
-        // Inject PAYMENT-REQUIRED (decoded) into 402 body
         const reqHeader = res.getHeader("PAYMENT-REQUIRED");
         if (reqHeader) {
           const paymentRequired = JSON.parse(Buffer.from(String(reqHeader), "base64").toString("utf8"));
@@ -58,7 +67,6 @@ function injectSettlement(): express.RequestHandler {
         res.setHeader("Content-Length", Buffer.byteLength(newBody));
         return originalEnd(newBody, ...args);
       } catch {
-        // Not JSON or decode failed, pass through
         return originalEnd(chunk, ...args);
       }
     };
@@ -90,7 +98,7 @@ function unpaidBody(description: string, network: string, asset: string, payTo: 
         assetSymbol: "USDC",
         payTo,
         facilitator: cfg.X402_FACILITATOR_URL,
-        hint: "Use ?amount=<USD> to set a custom price. Payment details are in the PAYMENT-REQUIRED response header (base64 JSON).",
+        hint: "Use ?amount=<USD> to set a custom price. Supports SIWX: paid wallets can sign in to re-access without repaying.",
       },
     };
   };
@@ -110,7 +118,7 @@ function unpaidBodyMulti(description: string) {
           { network: svmNetwork, asset: SVM_ASSET, assetSymbol: "USDC", payTo: cfg.X402_SVM_SELLER_PAYTO },
         ],
         facilitator: cfg.X402_FACILITATOR_URL,
-        hint: "This resource supports both EVM and SVM payments. Pick one to proceed. Use ?amount=<USD> to set a custom price.",
+        hint: "Supports both EVM and SVM. Pick one. Supports SIWX for repeat access.",
       },
     };
   };
@@ -119,17 +127,24 @@ function unpaidBodyMulti(description: string) {
 const EVM_ASSET = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 const SVM_ASSET = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
+// --- Routes with SIWX extension ---
 const routes: Record<string, any> = {
   "GET /premium/evm": {
     accepts: [{ scheme: "exact", price: resolvePrice, network: evmNetwork, payTo: cfg.X402_SELLER_PAYTO }],
     description: "Premium x402-protected JSON (EVM)",
     mimeType: "application/json",
+    extensions: declareSIWxExtension({
+      statement: "Sign in to access your purchased premium content (EVM)",
+    }),
     unpaidResponseBody: unpaidBody("Premium x402-protected JSON (EVM)", evmNetwork, EVM_ASSET, cfg.X402_SELLER_PAYTO),
   },
   "GET /premium/svm": {
     accepts: [{ scheme: "exact", price: resolvePrice, network: svmNetwork, asset: SVM_ASSET, payTo: cfg.X402_SVM_SELLER_PAYTO }],
     description: "Premium x402-protected JSON (SVM)",
     mimeType: "application/json",
+    extensions: declareSIWxExtension({
+      statement: "Sign in to access your purchased premium content (SVM)",
+    }),
     unpaidResponseBody: unpaidBody("Premium x402-protected JSON (SVM)", svmNetwork, SVM_ASSET, cfg.X402_SVM_SELLER_PAYTO),
   },
   "GET /premium/multi": {
@@ -139,9 +154,27 @@ const routes: Record<string, any> = {
     ],
     description: "Premium x402-protected JSON (Multi-chain)",
     mimeType: "application/json",
+    extensions: declareSIWxExtension({
+      statement: "Sign in to access your purchased premium content (Multi-chain)",
+    }),
     unpaidResponseBody: unpaidBodyMulti("Premium x402-protected JSON (Multi-chain)"),
   },
+  // Auth-only route: requires SIWX wallet signature but NO payment
+  "GET /premium/profile": {
+    accepts: [],
+    description: "Wallet-gated profile (auth-only, no payment)",
+    mimeType: "application/json",
+    extensions: declareSIWxExtension({
+      network: evmNetwork,
+      statement: "Sign in with your wallet to view your profile",
+      expirationSeconds: 300,
+    }),
+  },
 };
+
+// --- Build HTTP server with SIWX request hook ---
+const httpServer = new x402HTTPResourceServer(resourceServer, routes)
+  .onProtectedRequest(createSIWxRequestHook({ storage: siwxStorage }));
 
 resourceServer.initialize().then(() => {
   console.log("[x402-server] resourceServer initialized");
@@ -149,23 +182,33 @@ resourceServer.initialize().then(() => {
   const evmKind = resourceServer.getSupportedKind(x402Version, evmNetwork, "exact");
   const svmKind = resourceServer.getSupportedKind(x402Version, svmNetwork, "exact");
   console.log(`[x402-server] EVM: ${evmKind ? "OK" : "NOT FOUND"}, SVM: ${svmKind ? "OK" : "NOT FOUND"}`);
+  console.log("[x402-server] SIWX: enabled (standard flow, no JWT)");
 
   const app = express();
 
-  // 1) Inject settlement data into response body (wraps res.end BEFORE paymentMiddleware)
+  // 1) Inject settlement/payment-required data into response body
   app.use(injectSettlement());
 
-  // 2) x402 payment middleware
-  app.use(paymentMiddleware(routes, resourceServer, undefined, undefined, false));
+  // 2) x402 payment middleware (with SIWX hooks)
+  app.use(paymentMiddlewareFromHTTPServer(httpServer, undefined, undefined, false));
 
   // 3) Routes
   app.get("/health", (_req, res) => { res.json({ ok: true }); });
+
+  // SIWX storage debug endpoint
+  app.get("/debug/siwx", (_req, res) => {
+    res.json({
+      info: "In-memory SIWX storage. Lists wallets that have paid for each resource.",
+      note: "This endpoint is for debugging only. Remove in production.",
+      storage: (siwxStorage as any)._storage ?? "not accessible",
+    });
+  });
 
   app.get("/premium/evm", (req, res) => {
     const price = (req.query.amount as string) || cfg.X402_PRICE_USD;
     res.json({
       data: {
-        message: "x402 EVM payment succeeded",
+        message: "x402 EVM payment succeeded (or SIWX re-auth)",
         timestamp: new Date().toISOString(),
         price,
         network: evmNetwork,
@@ -181,7 +224,7 @@ resourceServer.initialize().then(() => {
     const price = (req.query.amount as string) || cfg.X402_PRICE_USD;
     res.json({
       data: {
-        message: "x402 SVM payment succeeded",
+        message: "x402 SVM payment succeeded (or SIWX re-auth)",
         timestamp: new Date().toISOString(),
         price,
         network: svmNetwork,
@@ -197,11 +240,22 @@ resourceServer.initialize().then(() => {
     const price = (req.query.amount as string) || cfg.X402_PRICE_USD;
     res.json({
       data: {
-        message: "x402 Multi-chain payment succeeded",
+        message: "x402 Multi-chain payment succeeded (or SIWX re-auth)",
         timestamp: new Date().toISOString(),
         price,
-        info: "This resource was unlocked using either EVM or SVM payment.",
+        info: "Unlocked using either EVM or SVM payment.",
         facilitator: cfg.X402_FACILITATOR_URL,
+      },
+    });
+  });
+
+  // Auth-only route: no payment needed, just wallet signature
+  app.get("/premium/profile", (req, res) => {
+    res.json({
+      data: {
+        message: "Welcome! You authenticated with your wallet (no payment needed).",
+        timestamp: new Date().toISOString(),
+        note: "This is an auth-only route. SIWX signature verified, no USDC charged.",
       },
     });
   });
